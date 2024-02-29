@@ -1,0 +1,182 @@
+-- Products
+-- Check for missing or duplicate values
+SELECT COUNT(*) AS total_rows,
+       COUNT(DISTINCT productCode) AS unique_product_codes
+FROM products;
+
+-- Examine the distribution of quantities in stock
+SELECT MIN(quantityInStock) AS min_quantity,
+       MAX(quantityInStock) AS max_quantity,
+       AVG(quantityInStock) AS avg_quantity
+FROM products;
+
+-- Explore product lines and their descriptions
+SELECT productLine, COUNT(*) AS num_products
+FROM products
+GROUP BY productLine;
+
+-- Order Details 
+-- Check for missing or incomplete data
+SELECT COUNT(*) AS total_rows,
+       COUNT(DISTINCT orderNumber) AS unique_order_numbers,
+       COUNT(DISTINCT productCode) AS unique_product_codes
+FROM orderdetails;
+
+-- Analyze the distribution of quantities ordered and prices
+SELECT MIN(quantityOrdered) AS min_quantity_ordered,
+       MAX(quantityOrdered) AS max_quantity_ordered,
+       AVG(quantityOrdered) AS avg_quantity_ordered,
+       MIN(priceEach) AS min_price,
+       MAX(priceEach) AS max_price,
+       AVG(priceEach) AS avg_price
+FROM orderdetails;
+
+-- Investigate the relationship between orders and sales figures
+SELECT o.orderNumber, SUM(od.quantityOrdered * od.priceEach) AS total_sales
+FROM orders o
+JOIN orderdetails od ON o.orderNumber = od.orderNumber
+GROUP BY o.orderNumber;
+
+-- customers
+-- Check for any patterns in customer locations or sales representatives
+SELECT country, COUNT(*) AS num_customers
+FROM customers
+GROUP BY country;
+
+-- Analyze credit limits distribution
+SELECT MIN(creditLimit) AS min_credit_limit,
+       MAX(creditLimit) AS max_credit_limit,
+       AVG(creditLimit) AS avg_credit_limit
+FROM customers;
+
+-- orders
+-- Examine order-related information such as dates, statuses, and comments
+SELECT orderDate, requiredDate, shippedDate, status, comments
+FROM orders;
+
+-- Check for any trends or patterns in order dates
+SELECT YEAR(orderDate) AS order_year,
+       MONTH(orderDate) AS order_month,
+       COUNT(*) AS num_orders
+FROM orders
+GROUP BY order_year, order_month
+ORDER BY order_year, order_month;
+
+
+-- Payments
+-- Analyze payment amounts and their distribution
+SELECT MIN(amount) AS min_payment_amount,
+       MAX(amount) AS max_payment_amount,
+       AVG(amount) AS avg_payment_amount
+FROM payments;
+
+-- Investigate the relationship between payments and orders
+SELECT o.orderNumber, COUNT(*) AS num_payments
+FROM orders o
+JOIN payments p ON o.customerNumber = p.customerNumber
+GROUP BY o.orderNumber;
+
+
+-- employees offices
+-- Analyze the distribution of employees across offices
+SELECT e.officeCode, o.city, COUNT(*) AS num_employees
+FROM employees e
+JOIN offices o ON e.officeCode = o.officeCode
+GROUP BY e.officeCode, o.city;
+
+-- Investigate relationships between employees and offices
+SELECT e.firstName, e.lastName, o.city AS office_city
+FROM employees e
+JOIN offices o ON e.officeCode = o.officeCode;
+
+
+-- Productlines and warehouses;
+-- Analyze the distribution of products across warehouses
+SELECT w.warehouseName, COUNT(p.productCode) AS num_products
+FROM warehouses w
+LEFT JOIN products p ON w.warehouseCode = p.warehouseCode
+GROUP BY w.warehouseName;
+
+-- Understand different product lines and their descriptions
+SELECT productLine, textDescription
+FROM productlines;
+
+-- Queries to answer the stated questions
+
+-- 1) Where are items stored and if they were rearranged, could a warehouse be eliminated?
+SELECT w.warehouseCode, w.warehouseName, COUNT(p.productCode) AS num_products
+FROM warehouses w
+LEFT JOIN products p ON w.warehouseCode = p.warehouseCode
+GROUP BY w.warehouseCode, w.warehouseName
+ORDER BY num_products DESC;
+
+-- Factors that may influence inventory reorganization/reduction.
+-- Top-selling products
+SELECT p.productCode, p.productName, SUM(od.quantityOrdered) AS total_quantity_ordered
+FROM products p
+INNER JOIN orderdetails od ON p.productCode = od.productCode
+GROUP BY p.productCode, p.productName
+ORDER BY total_quantity_ordered DESC;
+
+-- Slow-moving or stagnant inventory
+SELECT p.productCode, p.productName, COALESCE(SUM(od.quantityOrdered), 0) AS total_quantity_ordered
+FROM products p
+LEFT JOIN orderdetails od ON p.productCode = od.productCode
+GROUP BY p.productCode, p.productName
+HAVING total_quantity_ordered = 0
+ORDER BY p.productCode;
+
+-- Inventory turnover rate
+SELECT p.productCode, p.productName, p.quantityInStock, SUM(od.quantityOrdered) AS total_quantity_ordered,
+       (SUM(od.quantityOrdered) / p.quantityInStock) AS inventory_turnover_rate
+FROM products p
+LEFT JOIN orderdetails od ON p.productCode = od.productCode
+GROUP BY p.productCode, p.productName, p.quantityInStock
+ORDER BY inventory_turnover_rate DESC;
+
+-- Sales performance by product line
+SELECT pl.productLine, SUM(od.quantityOrdered) AS total_quantity_ordered,
+       SUM(od.quantityOrdered * od.priceEach) AS total_sales
+FROM productlines pl
+INNER JOIN products p ON pl.productLine = p.productLine
+INNER JOIN orderdetails od ON p.productCode = od.productCode
+GROUP BY pl.productLine
+ORDER BY total_sales DESC;
+
+-- 2) How are inventory numbers related to sales figures? Do the inventory counts seem appropriate for each item?
+SELECT 
+    p.productCode,
+    p.productName,
+    p.quantityInStock,
+    SUM(od.quantityOrdered) AS totalQuantityOrdered,
+    COUNT(od.orderNumber) AS numOrders,
+    SUM(od.quantityOrdered * od.priceEach) AS totalSales
+FROM 
+    products p
+LEFT JOIN 
+    orderdetails od ON p.productCode = od.productCode
+GROUP BY 
+    p.productCode, p.productName, p.quantityInStock
+ORDER BY 
+    p.productCode;
+    
+-- 3) Are we storing items that are not moving? Are any items candidates for being dropped from the product line?
+SELECT 
+    p.productCode,
+    p.productName,
+    p.quantityInStock,
+    SUM(od.quantityOrdered) AS totalQuantityOrdered,
+    COUNT(od.orderNumber) AS numOrders,
+    SUM(od.priceEach * od.quantityOrdered) AS totalSales
+FROM 
+    products p
+LEFT JOIN 
+    orderdetails od ON p.productCode = od.productCode
+GROUP BY 
+    p.productCode, p.productName, p.quantityInStock
+HAVING 
+    COUNT(od.orderNumber) = 0
+    OR (SUM(od.quantityOrdered) = 0 AND p.quantityInStock > 0)
+    OR (SUM(od.quantityOrdered) > 0 AND p.quantityInStock > 0 AND totalSales = 0);
+
+
